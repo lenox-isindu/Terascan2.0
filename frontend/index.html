@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terascan - AI-Powered Soil Health Analysis</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="styles/style.css">
+</head>
+<body>
+    <!-- Landing Page -->
+    <div id="landing-section">
+        <nav class="navbar">
+            <div class="nav-brand">
+                <div class="logo">🌍</div>
+                <span class="brand-name">Terascan</span>
+            </div>
+            <button class="nav-cta" onclick="showAuth()">Get Started</button>
+        </nav>
+
+        <div class="hero-section">
+            <div class="hero-content">
+                <h1 class="hero-title">
+                    Monitor Soil Health with 
+                    <span class="gradient-text">AI & Satellite Intelligence</span>
+                </h1>
+                <p class="hero-description">
+                    Terascan combines cutting-edge satellite imagery with artificial intelligence to detect soil degradation early, 
+                    providing actionable insights for sustainable land management.
+                </p>
+                <div class="hero-buttons">
+                    <button class="btn-primary" onclick="showAuth()">
+                        Start Analyzing
+                    </button>
+                    <button class="btn-secondary">
+                        Learn More
+                    </button>
+                </div>
+            </div>
+            <div class="hero-visual">
+                <div class="mockup-card">
+                    <div class="mockup-header">
+                        <div class="mockup-dots">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                    </div>
+                    <div class="mockup-map"></div>
+                    <div class="mockup-analysis">
+                        <div class="mockup-score">
+                            <div class="score-circle">78</div>
+                            <span>Soil Health</span>
+                        </div>
+                        <div class="mockup-recommendation">
+                            <span>✅ Optimal conditions</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="features-section">
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🛰️</div>
+                    <h3>Satellite Monitoring</h3>
+                    <p>Real-time vegetation and soil analysis using latest satellite imagery</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🤖</div>
+                    <h3>AI Predictions</h3>
+                    <p>Early detection of degradation risks before they become visible</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3>Smart Analytics</h3>
+                    <p>Historical trends and predictive insights for better decisions</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Auth Section -->
+    <div id="auth-section" class="hidden">
+        <div class="auth-container">
+            <div class="auth-card">
+                <button class="back-button" onclick="showLanding()">← Back</button>
+                <div class="auth-header">
+                    <div class="logo">🌍</div>
+                    <h2>Welcome to Terascan</h2>
+                    <p>Start monitoring your soil health today</p>
+                </div>
+                <div class="auth-form">
+                    <input type="email" id="email" placeholder="Enter your email">
+                    <input type="password" id="password" placeholder="Create a password">
+                    <button class="btn-primary" onclick="signUp()">Create Account</button>
+                    <button class="btn-secondary" onclick="signIn()">Sign In</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="app-section" class="hidden">
+        <!-- Top Navigation -->
+        <nav class="app-navbar">
+            <div class="nav-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div class="nav-brand">
+                    <div class="logo">🌍</div>
+                    <span class="brand-name">Terascan</span>
+                </div>
+            </div>
+            
+            <div class="nav-center">
+                <div class="location-indicator" id="current-location">
+                    <i class="fas fa-map-marker-alt"></i>
+                    <span id="location-text">Ready to analyze soil</span>
+                </div>
+            </div>
+
+            <div class="nav-user">
+                <span id="user-email"></span>
+                <button class="btn-outline" onclick="signOut()">Sign Out</button>
+            </div>
+        </nav>
+
+        <!-- Flash Cards Container -->
+        <div class="flash-cards" id="flash-cards"></div>
+
+        <!-- Main Content -->
+        <div class="app-container">
+            <!-- Sidebar -->
+            <aside class="sidebar" id="sidebar">
+                <div class="sidebar-header">
+                    <h3>Terascan</h3>
+                    <button class="sidebar-close" onclick="toggleSidebar()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+
+                <nav class="sidebar-nav">
+                    <a href="#" class="nav-item active" data-page="map-analysis">
+                        <i class="fas fa-map"></i>
+                        <span>Map Analysis</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="analysis-history">
+                        <i class="fas fa-history"></i>
+                        <span>Analysis History</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="terra-ai">
+                        <i class="fas fa-robot"></i>
+                        <span>Terra AI</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="farm-insights">
+                        <i class="fas fa-seedling"></i>
+                        <span>Farm Insights</span>
+                    </a>
+                </nav>
+
+                <!-- Notifications -->
+                <div class="notifications-panel">
+                    <div class="notifications-header">
+                        <h4>Today's Tips</h4>
+                        <i class="fas fa-bell"></i>
+                    </div>
+                    <div class="notifications-list" id="notifications-list">
+                        <div class="notification-item">
+                            <strong>🌱 Welcome!</strong>
+                            <p>Analyze your first location to get started</p>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Main Content -->
+            <main class="main-content">
+                <!-- Map Analysis Page -->
+                <div id="map-analysis" class="page active">
+                    <div class="page-header">
+                        <h1>Soil Health Analysis</h1>
+                        <p>Select a location to analyze soil conditions and get AI-powered recommendations</p>
+                    </div>
+
+                    <div class="app-grid">
+                        <div class="map-card">
+                            <div class="card-header">
+                                <h3>Location Map</h3>
+                                <div class="map-controls">
+                                    <button class="btn-gps" onclick="getCurrentLocation()">
+                                        <i class="fas fa-location-crosshairs"></i> My Location
+                                    </button>
+                                    <button class="btn-sm" onclick="resetMapView()">
+                                        <i class="fas fa-globe"></i> Reset
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="map" class="map"></div>
+                            <div class="location-display" id="location-display">
+                                <div><i class="fas fa-map-pin"></i> <strong>Click on map or use "My Location"</strong></div>
+                            </div>
+                            <div class="location-search-enhanced">
+                                <input type="text" id="location-search" placeholder="Search for a location...">
+                                <button class="btn-primary" onclick="searchLocation()">
+                                    <i class="fas fa-search"></i> Search
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="analysis-card">
+                            <div class="card-header">
+                                <h3>Soil Analysis</h3>
+                            </div>
+                            <div id="results" class="analysis-content">
+                                <div class="analysis-placeholder">
+                                    <div class="placeholder-icon">🌱</div>
+                                    <p>Select a location to analyze soil health</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="chat-card">
+                            <div class="card-header">
+                                <h3>AI Assistant</h3>
+                                <button class="btn-sm" onclick="showCommonQuestions()">
+                                    <i class="fas fa-lightbulb"></i> Tips
+                                </button>
+                            </div>
+                            <div id="chat-messages" class="chat-messages">
+                                <div class="message bot-message">
+                                    <i class="fas fa-robot"></i> Hi! I'm your soil health assistant. Ask me about soil conditions, improvement strategies, or analysis results.
+                                </div>
+                            </div>
+                            <div class="chat-input">
+                                <input type="text" id="chat-input" placeholder="Ask about soil health...">
+                                <button class="btn-primary" onclick="askClaude()">
+                                    <i class="fas fa-paper-plane"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Analysis History Page -->
+                <div id="analysis-history" class="page">
+                    <div class="page-header">
+                        <h1>Analysis History</h1>
+                        <p>Review your previous soil analyses and track improvements</p>
+                    </div>
+                    <div class="history-content">
+                        <div id="history-list" class="history-list">
+                            <div class="history-placeholder">
+                                <i class="fas fa-history"></i>
+                                <p>No analysis history yet</p>
+                                <button class="btn-primary" onclick="showPage('map-analysis')">
+                                    Analyze First Location
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Terra AI Page -->
+                <div id="terra-ai" class="page">
+                    <div class="page-header">
+                        <h1>Terra AI Assistant</h1>
+                        <p>Get personalized farming advice and answers to common questions</p>
+                    </div>
+                    <div class="ai-container">
+                        <div class="common-questions">
+                            <h3>Common Farming Questions</h3>
+                            <div class="questions-grid" id="common-questions">
+                                <!-- Questions will be loaded by JavaScript -->
+                            </div>
+                        </div>
+                        <div class="ai-chat-container">
+                            <div class="chat-card" style="height: 500px;">
+                                <div id="ai-chat-messages" class="chat-messages">
+                                    <div class="message bot-message">
+                                        <i class="fas fa-robot"></i> Hey there! I'm Terra AI. Ask me anything about farming, crops, or check out the common questions above for quick tips!
+                                    </div>
+                                </div>
+                                <div class="chat-input">
+                                    <input type="text" id="ai-chat-input" placeholder="Ask about farming...">
+                                    <button class="btn-primary" onclick="askAI()">
+                                        <i class="fas fa-paper-plane"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Farm Insights Page -->
+                <div id="farm-insights" class="page">
+                    <div class="page-header">
+                        <h1>Farm Insights</h1>
+                        <p>Personalized recommendations and farming calendar</p>
+                    </div>
+                    <div class="insights-content">
+                        <div class="insights-grid" id="insights-grid">
+                            <div class="insight-card">
+                                <div class="insight-icon">🌦️</div>
+                                <h3>Weather Ready</h3>
+                                <p>Get location-based weather tips and clothing suggestions</p>
+                                <button class="btn-outline" onclick="showWeatherTips()">Get Tips</button>
+                            </div>
+                            <div class="insight-card">
+                                <div class="insight-icon">🌽</div>
+                                <h3>Crop Suggestions</h3>
+                                <p>Best crops for your soil type and climate</p>
+                                <button class="btn-outline" onclick="showCropSuggestions()">View Crops</button>
+                            </div>
+                            <div class="insight-card">
+                                <div class="insight-icon">📅</div>
+                                <h3>Farming Calendar</h3>
+                                <p>Optimal planting and harvesting times</p>
+                                <button class="btn-outline" onclick="showFarmingCalendar()">View Calendar</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Common Questions Modal -->
+    <div id="questions-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Common Farming Questions</h3>
+                <button class="modal-close" onclick="closeModal('questions-modal')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="questions-list" id="modal-questions">
+                    <!-- Questions loaded by JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.38.0/dist/umd/supabase.min.js"></script>
+    <script src="js/supabase-client.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/map-handler.js"></script>
+    <script src="js/soil-analyzer.js"></script>
+    <script src="js/chatbot.js"></script>
+    <script src="js/notifications.js"></script>
+</body>
+</html>
