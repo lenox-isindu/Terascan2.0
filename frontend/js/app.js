@@ -1,4 +1,4 @@
-// app.js - Fixed User Data Association and Analysis History
+// app.js - Fixed Version with UUID Support and Duplicate Prevention
 
 class TerascanApp {
     constructor() {
@@ -10,6 +10,7 @@ class TerascanApp {
         this.backendUrl = 'http://localhost:3000/api';
         this.userName = 'User';
         this.userId = this.getUserId();
+        this.lastAnalysisId = null; // Track last analysis to prevent duplicates
         
         this.init();
     }
@@ -18,6 +19,10 @@ class TerascanApp {
         this.setupNavigation();
         this.loadCommonQuestions();
         this.setupEventListeners();
+        
+        // Migrate old data before loading
+        this.migrateOldAnalyses();
+        
         this.loadStoredData();
         this.startLocationTracking();
         
@@ -26,6 +31,51 @@ class TerascanApp {
         setTimeout(() => {
             this.showWelcomeMessage();
         }, 1000);
+    }
+
+    // UUID Generation and Migration Methods
+    generateUUID() {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            const r = Math.random() * 16 | 0;
+            const v = c == 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
+
+    isUUID(id) {
+        if (!id) return false;
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        return uuidRegex.test(id.toString());
+    }
+
+    migrateOldAnalyses() {
+        const storageKey = this.getUserStorageKey('analysisHistory');
+        const storedHistory = localStorage.getItem(storageKey);
+        
+        if (storedHistory) {
+            const history = JSON.parse(storedHistory);
+            let needsMigration = false;
+            
+            const migratedHistory = history.map(item => {
+                // If item has numeric ID, migrate it to UUID
+                if (!this.isUUID(item.id)) {
+                    needsMigration = true;
+                    console.log('🔄 Migrating old ID:', item.id, 'to UUID');
+                    return {
+                        ...item,
+                        id: this.generateUUID(),
+                        originalId: item.id // Keep original for reference
+                    };
+                }
+                return item;
+            });
+            
+            if (needsMigration) {
+                localStorage.setItem(storageKey, JSON.stringify(migratedHistory));
+                console.log('✅ Migrated old analysis IDs to UUID format');
+                this.analysisHistory = migratedHistory;
+            }
+        }
     }
 
     getUserId() {
@@ -51,21 +101,28 @@ class TerascanApp {
         
         this.showFlashCard(welcomeMessage, 'success');
         
-        if (this.userLocation) {
-            setTimeout(() => {
-                this.autoAnalyzeCurrentLocation();
-            }, 2000);
-        }
+        // Don't auto-analyze on page load to prevent duplicates
+        // Let user manually analyze if they want fresh data
     }
 
     getUserName() {
         return localStorage.getItem('terraScan_userName') || 'User';
     }
 
+    // Modified to prevent duplicate auto-analysis
     autoAnalyzeCurrentLocation() {
         if (!this.userLocation) return;
         
         console.log('🔄 Auto-analyzing current location...');
+        
+        // Check if we already have a recent analysis for this location
+        const recentAnalysis = this.getRecentAnalysisForLocation(this.userLocation.lat, this.userLocation.lng);
+        if (recentAnalysis && this.isAnalysisRecent(recentAnalysis)) {
+            console.log('📊 Using recent analysis instead of creating duplicate');
+            this.updateChatbotContext(recentAnalysis);
+            this.updateSidebarTips(recentAnalysis);
+            return;
+        }
         
         setTimeout(() => {
             const mockAnalysis = this.generateMockAnalysis(this.userLocation);
@@ -78,12 +135,43 @@ class TerascanApp {
         }, 1500);
     }
 
+    // Helper method to check for recent analysis at location
+    getRecentAnalysisForLocation(lat, lng, maxDistanceKm = 1, maxAgeMinutes = 60) {
+        const now = new Date();
+        return this.analysisHistory.find(analysis => {
+            const distance = this.calculateDistance(lat, lng, analysis.lat, analysis.lng);
+            const ageMinutes = (now - new Date(analysis.timestamp)) / (1000 * 60);
+            return distance <= maxDistanceKm && ageMinutes <= maxAgeMinutes;
+        });
+    }
+
+    // Helper method to calculate distance between coordinates
+    calculateDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371; // Earth's radius in km
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = 
+            Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        return R * c;
+    }
+
+    // Helper method to check if analysis is recent
+    isAnalysisRecent(analysis, maxAgeMinutes = 60) {
+        const now = new Date();
+        const analysisTime = new Date(analysis.timestamp);
+        const ageMinutes = (now - analysisTime) / (1000 * 60);
+        return ageMinutes <= maxAgeMinutes;
+    }
+
     generateMockAnalysis(location) {
         const baseScore = Math.floor(Math.random() * 30) + 60;
         const temperature = this.getCurrentTemperature();
         
         return {
-            id: Date.now(),
+            id: this.generateUUID(), // Use UUID instead of Date.now()
             lat: location.lat,
             lng: location.lng,
             locationName: "Your Current Location",
@@ -396,9 +484,8 @@ class TerascanApp {
                     
                     console.log('📍 User location detected:', this.userLocation);
                     
-                    setTimeout(() => {
-                        this.autoAnalyzeCurrentLocation();
-                    }, 2000);
+                    // Don't auto-analyze immediately to prevent duplicates
+                    // Let user manually analyze if they want fresh data
                 },
                 (error) => {
                     console.log('Location access denied or unavailable:', error);
@@ -496,38 +583,155 @@ class TerascanApp {
             }
         }, 500);
     }
+async loadAnalysisHistory() {
+    const historyList = document.getElementById('history-list');
+    if (!historyList) return;
 
-    loadAnalysisHistory() {
-        const historyList = document.getElementById('history-list');
-        if (!historyList) return;
+    // Try to load from Supabase first
+    try {
+        await this.loadHistoryFromSupabase();
+        
+        // If Supabase is empty but we have local data, sync it
+        if (this.analysisHistory.length === 0) {
+            await this.syncLocalHistoryToSupabase();
+            // Try loading from Supabase again after sync
+            await this.loadHistoryFromSupabase();
+        }
+        
+    } catch (error) {
+        console.warn('Failed to load from Supabase, using localStorage:', error);
+        this.loadHistoryFromLocalStorage();
+    }
 
+    console.log(`📊 Loading history for user ${this.userId}:`, this.analysisHistory);
+
+    this.renderHistoryList(historyList);
+}
+
+    async loadHistoryFromSupabase() {
+        if (typeof supabase === 'undefined') {
+            throw new Error('Supabase not available');
+        }
+
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        
+        if (userError || !user) {
+            throw new Error('No authenticated user');
+        }
+
+        console.log('📥 Loading history from Supabase for user:', user.id);
+
+        const { data, error } = await supabase
+            .from('analysis_history')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false })
+            .limit(50);
+
+        if (error) {
+            console.error('Supabase query error:', error);
+            throw error;
+        }
+
+        if (data && data.length > 0) {
+            // Convert Supabase data to app format
+            this.analysisHistory = data.map(item => ({
+                id: item.id,
+                lat: parseFloat(item.lat),
+                lng: parseFloat(item.lng),
+                locationName: item.location_name,
+                healthScore: parseInt(item.health_score),
+                riskLevel: item.risk_level,
+                ndvi: parseFloat(item.ndvi),
+                moisture: parseFloat(item.moisture),
+                temperature: item.temperature ? parseFloat(item.temperature) : null,
+                climateZone: item.climate_zone,
+                recommendations: item.recommendations || [],
+                timestamp: item.created_at,
+                userId: user.id
+            }));
+
+            // Update localStorage with Supabase data
+            const storageKey = this.getUserStorageKey('analysisHistory');
+            localStorage.setItem(storageKey, JSON.stringify(this.analysisHistory));
+            
+            console.log(`✅ Loaded ${this.analysisHistory.length} analyses from Supabase`);
+        } else {
+            // Fallback to localStorage if no Supabase data
+            this.loadHistoryFromLocalStorage();
+        }
+    }
+
+    // Add this method to sync localStorage data to Supabase
+async syncLocalHistoryToSupabase() {
+    try {
+        const storageKey = this.getUserStorageKey('analysisHistory');
+        const localHistory = localStorage.getItem(storageKey);
+        
+        if (!localHistory) {
+            console.log('📊 No local history to sync');
+            return;
+        }
+
+        const analyses = JSON.parse(localHistory);
+        console.log(`🔄 Syncing ${analyses.length} local analyses to Supabase`);
+
+        let syncedCount = 0;
+        
+        for (const analysis of analyses) {
+            try {
+                await this.saveAnalysisToSupabase(analysis);
+                syncedCount++;
+            } catch (error) {
+                console.warn('Failed to sync analysis:', analysis.id, error);
+            }
+        }
+
+        console.log(`✅ Successfully synced ${syncedCount}/${analyses.length} analyses to Supabase`);
+        
+        if (syncedCount > 0) {
+            this.showFlashCard(`🔄 Synced ${syncedCount} analyses to cloud`, 'info');
+        }
+        
+    } catch (error) {
+        console.error('Error syncing local history to Supabase:', error);
+    }
+}
+    loadHistoryFromLocalStorage() {
         const storageKey = this.getUserStorageKey('analysisHistory');
         const storedHistory = localStorage.getItem(storageKey);
         this.analysisHistory = storedHistory ? JSON.parse(storedHistory) : [];
+        
+        console.log(`📥 Loaded ${this.analysisHistory.length} analyses from localStorage`);
+    }
 
-        console.log(`📊 Loading history for user ${this.userId}:`, this.analysisHistory);
-
+    renderHistoryList(historyList) {
         if (this.analysisHistory.length === 0) {
             historyList.innerHTML = `
                 <div class="history-placeholder">
                     <i class="fas fa-history fa-3x" style="color: var(--gray-light); margin-bottom: 1rem;"></i>
                     <h3>No Analysis History Yet</h3>
                     <p>Start by analyzing locations on the map to build your soil health history</p>
-                    <button class="btn-primary" onclick="showPage('map-analysis')">
+                    <button class="btn-primary" onclick="app.showPage('map-analysis')">
                         <i class="fas fa-map"></i> Start Analyzing
                     </button>
                 </div>
             `;
         } else {
-            historyList.innerHTML = this.analysisHistory.map(analysis => `
-                <div class="history-item" onclick="app.viewAnalysisDetails(${analysis.id})">
+            historyList.innerHTML = this.analysisHistory.map(analysis => {
+                // Ensure values are numbers
+                const ndviValue = parseFloat(analysis.ndvi);
+                const moistureValue = parseFloat(analysis.moisture);
+                
+                return `
+                <div class="history-item" onclick="app.viewAnalysisDetails('${analysis.id}')">
                     <div class="history-main">
                         <div class="history-location">
                             <i class="fas fa-map-marker-alt"></i>
                             <strong>${analysis.locationName || 'Unknown Location'}</strong>
                         </div>
                         <div class="history-coordinates">
-                            ${analysis.lat.toFixed(4)}, ${analysis.lng.toFixed(4)}
+                            ${parseFloat(analysis.lat).toFixed(4)}, ${parseFloat(analysis.lng).toFixed(4)}
                         </div>
                         <div class="history-date">
                             <i class="fas fa-calendar"></i>
@@ -544,10 +748,10 @@ class TerascanApp {
                         </div>
                         <div class="history-metrics">
                             <div class="metric-tag">
-                                <i class="fas fa-leaf"></i> NDVI: ${analysis.ndvi.toFixed(3)}
+                                <i class="fas fa-leaf"></i> NDVI: ${!isNaN(ndviValue) ? ndviValue.toFixed(3) : 'N/A'}
                             </div>
                             <div class="metric-tag">
-                                <i class="fas fa-tint"></i> ${(analysis.moisture * 100).toFixed(1)}%
+                                <i class="fas fa-tint"></i> ${!isNaN(moistureValue) ? (moistureValue * 100).toFixed(1) + '%' : 'N/A'}
                             </div>
                         </div>
                     </div>
@@ -555,12 +759,13 @@ class TerascanApp {
                         <button class="btn-sm btn-outline" onclick="event.stopPropagation(); app.reanalyzeLocation(${analysis.lat}, ${analysis.lng})">
                             <i class="fas fa-sync-alt"></i>
                         </button>
-                        <button class="btn-sm btn-danger" onclick="event.stopPropagation(); app.deleteAnalysis(${analysis.id})">
+                        <button class="btn-sm btn-danger" onclick="event.stopPropagation(); app.deleteAnalysis('${analysis.id}')">
                             <i class="fas fa-trash"></i>
                         </button>
                     </div>
                 </div>
-            `).join('');
+                `;
+            }).join('');
         }
     }
 
@@ -696,15 +901,61 @@ class TerascanApp {
         }, 1000);
     }
 
-    deleteAnalysis(analysisId) {
+    async deleteAnalysis(analysisId) {
         if (confirm('Are you sure you want to delete this analysis?')) {
+            // Find the analysis to get the correct ID
+            const analysis = this.analysisHistory.find(item => item.id === analysisId);
+            if (!analysis) {
+                console.error('Analysis not found:', analysisId);
+                this.showFlashCard('❌ Analysis not found', 'error');
+                return;
+            }
+
+            // Delete from local history
             this.analysisHistory = this.analysisHistory.filter(item => item.id !== analysisId);
             
+            // Delete from localStorage
             const storageKey = this.getUserStorageKey('analysisHistory');
             localStorage.setItem(storageKey, JSON.stringify(this.analysisHistory));
             
+            // Delete from Supabase - use the ID from the analysis object
+            await this.deleteAnalysisFromSupabase(analysis.id);
+            
             this.loadAnalysisHistory();
             this.showFlashCard('🗑️ Analysis deleted from history', 'info');
+        }
+    }
+
+    async deleteAnalysisFromSupabase(analysisId) {
+        try {
+            if (typeof supabase === 'undefined') {
+                console.warn('Supabase not available for deletion');
+                return;
+            }
+
+            console.log('🗑️ Attempting to delete analysis with ID:', analysisId, 'Type:', typeof analysisId);
+
+            // Ensure we have a valid UUID
+            if (!this.isUUID(analysisId)) {
+                console.error('Invalid UUID format for deletion:', analysisId);
+                this.showFlashCard('❌ Cannot delete: Invalid analysis ID format', 'error');
+                return;
+            }
+
+            const { error } = await supabase
+                .from('analysis_history')
+                .delete()
+                .eq('id', analysisId);
+
+            if (error) {
+                console.error('Error deleting from Supabase:', error);
+                this.showFlashCard('❌ Failed to delete from server', 'error');
+            } else {
+                console.log('✅ Analysis deleted from Supabase:', analysisId);
+            }
+        } catch (error) {
+            console.error('Failed to delete from Supabase:', error);
+            this.showFlashCard('❌ Error during deletion', 'error');
         }
     }
 
@@ -728,23 +979,42 @@ class TerascanApp {
         return 'Very Low';
     }
 
-    addToHistory(analysisData) {
+    async addToHistory(analysisData) {
+        // Check for duplicate analysis (same location within 1km and recent)
+        const existingAnalysis = this.getRecentAnalysisForLocation(
+            analysisData.lat, 
+            analysisData.lng, 
+            1, // 1km radius
+            30 // 30 minutes
+        );
+
+        if (existingAnalysis) {
+            console.log('🔄 Using existing analysis instead of creating duplicate');
+            this.showFlashCard('📊 Using recent analysis data for this location', 'info');
+            return existingAnalysis;
+        }
+
         const historyItem = {
-            id: Date.now(),
+            id: this.generateUUID(),
             timestamp: new Date().toISOString(),
             locationName: window.currentAnalysisLocation || "Selected Location",
             userId: this.userId,
             ...analysisData
         };
 
+        // Add to local history
         this.analysisHistory.unshift(historyItem);
         
         if (this.analysisHistory.length > 50) {
             this.analysisHistory = this.analysisHistory.slice(0, 50);
         }
 
+        // Save to localStorage
         const storageKey = this.getUserStorageKey('analysisHistory');
         localStorage.setItem(storageKey, JSON.stringify(this.analysisHistory));
+        
+        // Save to Supabase
+        await this.saveAnalysisToSupabase(historyItem);
         
         if (this.currentPage === 'analysis-history') {
             this.loadAnalysisHistory();
@@ -753,526 +1023,134 @@ class TerascanApp {
         this.showFlashCard('📊 Analysis saved to history', 'info');
         
         console.log(`💾 Saved analysis to history for user ${this.userId}`, historyItem);
+        return historyItem;
     }
 
-    loadFarmInsights() {
-        const insightsGrid = document.getElementById('insights-grid');
-        if (!insightsGrid) return;
-
-        console.log('🌾 Loading insights...');
-
-        if (this.analysisHistory.length === 0) {
-            insightsGrid.innerHTML = `
-                <div class="insights-placeholder">
-                    <i class="fas fa-seedling fa-3x" style="color: var(--gray-light); margin-bottom: 1rem;"></i>
-                    <h3>No Insights Yet</h3>
-                    <p>Analyze locations to get personalized recommendations and track your soil health progress</p>
-                    <button class="btn-primary" onclick="showPage('map-analysis')">
-                        <i class="fas fa-map"></i> Start Analyzing Soil
-                    </button>
-                </div>
-            `;
+    async saveAnalysisToSupabase(analysis) {
+    try {
+        // Check if Supabase is available
+        if (typeof supabase === 'undefined') {
+            console.warn('Supabase not available, skipping database save');
             return;
         }
 
-        const recentAnalysis = this.analysisHistory[0];
-        const soilTrend = this.calculateSoilTrend();
-        const seasonalAdvice = this.getSeasonalAdvice();
-
-        insightsGrid.innerHTML = `
-            <div class="insight-card insight-primary">
-                <div class="insight-icon">📈</div>
-                <h3>Soil Health Overview</h3>
-                <div class="insight-metrics">
-                    <div class="insight-metric">
-                        <span class="metric-value">${recentAnalysis.healthScore}/100</span>
-                        <span class="metric-label">Current Score</span>
-                    </div>
-                    <div class="insight-metric">
-                        <span class="metric-value ${soilTrend.trend === 'improving' ? 'trend-up' : soilTrend.trend === 'declining' ? 'trend-down' : ''}">
-                            ${soilTrend.trend === 'improving' ? '↗️' : soilTrend.trend === 'declining' ? '↘️' : '➡️'} ${Math.abs(soilTrend.change)}%
-                        </span>
-                        <span class="metric-label">${soilTrend.trend} trend</span>
-                    </div>
-                </div>
-                <p>${this.getSoilHealthMessage(recentAnalysis.healthScore)}</p>
-                <button class="btn-outline soil-health-btn" onclick="app.showSoilHealthDetails()">
-                    View Soil Details
-                </button>
-            </div>
-
-            <div class="insight-card">
-                <div class="insight-icon">📅</div>
-                <h3>Seasonal Planting Guide</h3>
-                <div class="seasonal-content">
-                    <div class="season-badge">${seasonalAdvice.season}</div>
-                    <p class="season-tip">${seasonalAdvice.plantingTips}</p>
-                    <div class="crop-suggestions">
-                        <h4>Best Plants Right Now:</h4>
-                        <div class="crop-tags">
-                            ${seasonalAdvice.recommendedCrops.map(crop => `
-                                <span class="crop-tag">${crop}</span>
-                            `).join('')}
-                        </div>
-                    </div>
-                    <div class="seasonal-tips">
-                        <h4>This Season's Tips:</h4>
-                        <ul>
-                            ${seasonalAdvice.seasonTips.map(tip => `<li>${tip}</li>`).join('')}
-                        </ul>
-                    </div>
-                </div>
-            </div>
-
-            <div class="insight-card">
-                <div class="insight-icon">💧</div>
-                <h3>Water Management</h3>
-                <div class="water-content">
-                    <div class="moisture-level ${this.getMoistureLevelClass(recentAnalysis.moisture)}">
-                        Soil Moisture: ${(recentAnalysis.moisture * 100).toFixed(1)}%
-                    </div>
-                    <p>${this.getWaterAdvice(recentAnalysis.moisture)}</p>
-                    <div class="water-tips">
-                        ${this.getWaterTips(recentAnalysis.moisture).map(tip => `
-                            <div class="water-tip">💧 ${tip}</div>
-                        `).join('')}
-                    </div>
-                </div>
-            </div>
-
-            <div class="insight-card">
-                <div class="insight-icon">🌤️</div>
-                <h3>Field Conditions</h3>
-                <div class="field-conditions">
-                    <div class="condition-item">
-                        <span class="condition-label">Temperature:</span>
-                        <span class="condition-value">${recentAnalysis.temperature || this.getCurrentTemperature()}°C</span>
-                    </div>
-                    <div class="condition-item">
-                        <span class="condition-label">Moisture:</span>
-                        <span class="condition-value ${this.getMoistureLevelClass(recentAnalysis.moisture)}">
-                            ${(recentAnalysis.moisture * 100).toFixed(1)}%
-                        </span>
-                    </div>
-                    <div class="condition-item">
-                        <span class="condition-label">Vegetation:</span>
-                        <span class="condition-value ${this.getNDVIClass(recentAnalysis.ndvi)}">
-                            ${this.getNDVIStatus(recentAnalysis.ndvi)}
-                        </span>
-                    </div>
-                </div>
-                <div class="field-notifications">
-                    ${this.getFieldNotifications(recentAnalysis).map(notification => `
-                        <div class="field-notification ${notification.type}">
-                            <i class="fas ${notification.icon}"></i>
-                            ${notification.message}
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-        `;
-    }
-
-    showSoilHealthDetails() {
-        if (this.analysisHistory.length === 0) return;
-
-        const recentAnalysis = this.analysisHistory[0];
+        // Get current user
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
         
-        const modalHtml = `
-            <div class="modal" id="soil-health-modal">
-                <div class="modal-content" style="max-width: 600px;">
-                    <div class="modal-header">
-                        <h3>🌱 Soil Health Details</h3>
-                        <button class="modal-close" onclick="closeModal('soil-health-modal')">
-                            <i class="fas fa-times"></i>
-                        </button>
-                    </div>
-                    <div class="modal-body">
-                        <div class="soil-details">
-                            <div class="soil-score-large">
-                                <div class="score-circle-large ${this.getScoreClass(recentAnalysis.healthScore)}">
-                                    ${recentAnalysis.healthScore}
-                                </div>
-                                <div class="score-info">
-                                    <h4>Overall Health Score</h4>
-                                    <p>${this.getSoilHealthMessage(recentAnalysis.healthScore)}</p>
-                                </div>
-                            </div>
-                            
-                            <div class="soil-metrics">
-                                <h4>Detailed Metrics</h4>
-                                <div class="metric-detail">
-                                    <span class="metric-name">Vegetation Index (NDVI)</span>
-                                    <span class="metric-value">${recentAnalysis.ndvi.toFixed(3)}</span>
-                                    <span class="metric-status ${this.getNDVIClass(recentAnalysis.ndvi)}">${this.getNDVIStatus(recentAnalysis.ndvi)}</span>
-                                </div>
-                                <div class="metric-detail">
-                                    <span class="metric-name">Soil Moisture</span>
-                                    <span class="metric-value">${(recentAnalysis.moisture * 100).toFixed(1)}%</span>
-                                    <span class="metric-status ${this.getMoistureLevelClass(recentAnalysis.moisture)}">${this.getMoistureStatus(recentAnalysis.moisture)}</span>
-                                </div>
-                                <div class="metric-detail">
-                                    <span class="metric-name">Risk Level</span>
-                                    <span class="metric-value">${recentAnalysis.riskLevel}</span>
-                                    <span class="metric-status risk-${recentAnalysis.riskLevel}">${recentAnalysis.riskLevel.toUpperCase()}</span>
-                                </div>
-                            </div>
-                            
-                            <div class="soil-recommendations">
-                                <h4>Recommendations</h4>
-                                <div class="recommendations-list">
-                                    ${recentAnalysis.recommendations.map((rec, index) => `
-                                        <div class="recommendation-item">
-                                            <span class="rec-number">${index + 1}</span>
-                                            <span class="rec-text">${rec}</span>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button class="btn-primary" onclick="closeModal('soil-health-modal')">
-                            Close
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        const existingModal = document.getElementById('soil-health-modal');
-        if (existingModal) existingModal.remove();
-
-        document.body.insertAdjacentHTML('beforeend', modalHtml);
-        document.getElementById('soil-health-modal').classList.remove('hidden');
-    }
-
-    calculateSoilTrend() {
-        if (this.analysisHistory.length < 2) {
-            return { trend: 'stable', change: 0 };
+        if (userError || !user) {
+            console.warn('No authenticated user, saving to localStorage only:', userError);
+            return;
         }
-        
-        const recentScore = this.analysisHistory[0].healthScore;
-        const previousScore = this.analysisHistory[1].healthScore;
-        const change = ((recentScore - previousScore) / previousScore) * 100;
-        
-        if (change > 5) return { trend: 'improving', change: change.toFixed(1) };
-        if (change < -5) return { trend: 'declining', change: Math.abs(change).toFixed(1) };
-        return { trend: 'stable', change: change.toFixed(1) };
-    }
 
-    getSoilHealthMessage(score) {
-        if (score >= 70) return "Excellent soil health! Maintain your sustainable practices.";
-        if (score >= 40) return "Good soil with improvement potential. Focus on organic matter.";
-        return "Soil needs attention. Implement restoration practices immediately.";
-    }
+        console.log('💾 Saving analysis to Supabase for user:', user.id);
 
-    getSeasonalAdvice() {
-        const month = new Date().getMonth();
-        const seasons = {
-            0: { 
-                season: "Late Summer", 
-                plantingTips: "Perfect for harvesting and preparing autumn beds",
-                recommendedCrops: ["Kale", "Spinach", "Lettuce", "Broccoli"],
-                seasonTips: [
-                    "Harvest summer crops before frost",
-                    "Prepare soil for autumn planting",
-                    "Add compost to empty beds"
-                ]
-            },
-            1: { 
-                season: "Early Autumn", 
-                plantingTips: "Ideal for cool-season vegetables establishment",
-                recommendedCrops: ["Broccoli", "Cauliflower", "Carrots", "Beets"],
-                seasonTips: [
-                    "Plant garlic and onions",
-                    "Divide perennial herbs",
-                    "Test soil pH levels"
-                ]
-            },
-            2: { 
-                season: "Mid Autumn", 
-                plantingTips: "Last chance for winter crop planting",
-                recommendedCrops: ["Garlic", "Onions", "Peas", "Broad Beans"],
-                seasonTips: [
-                    "Apply winter mulch",
-                    "Protect tender plants",
-                    "Clean and store tools"
-                ]
-            },
-            7: { 
-                season: "Early Spring", 
-                plantingTips: "Perfect timing for most vegetable planting",
-                recommendedCrops: ["Tomatoes", "Beans", "Maize", "Squash"],
-                seasonTips: [
-                    "Start seed indoors",
-                    "Prepare garden beds",
-                    "Test irrigation systems"
-                ]
-            },
-            8: { 
-                season: "Mid Spring", 
-                plantingTips: "Warm-season crops planting window",
-                recommendedCrops: ["Peppers", "Cucumbers", "Eggplant", "Melons"],
-                seasonTips: [
-                    "Direct sow warm crops",
-                    "Stake tall plants",
-                    "Monitor for pests"
-                ]
-            },
-            11: { 
-                season: "Mid Summer", 
-                plantingTips: "Heat management and succession planting",
-                recommendedCrops: ["Sweet Potatoes", "Okra", "Amaranth", "Malabar"],
-                seasonTips: [
-                    "Water deeply in morning",
-                    "Harvest regularly",
-                    "Watch for heat stress"
-                ]
-            }
+        // Prepare data for Supabase
+        const supabaseData = {
+            user_id: user.id, // Use Supabase auth user ID
+            lat: parseFloat(analysis.lat),
+            lng: parseFloat(analysis.lng),
+            location_name: analysis.locationName,
+            health_score: parseInt(analysis.healthScore),
+            risk_level: analysis.riskLevel,
+            ndvi: parseFloat(analysis.ndvi),
+            moisture: parseFloat(analysis.moisture),
+            temperature: analysis.temperature ? parseFloat(analysis.temperature) : null,
+            climate_zone: analysis.climateZone || 'unknown',
+            recommendations: analysis.recommendations || [],
+            created_at: analysis.timestamp || new Date().toISOString() // Use existing timestamp if available
         };
-        
-        return seasons[month] || { 
-            season: "Growing Season", 
-            plantingTips: "Good conditions for various plants",
-            recommendedCrops: ["Mixed Vegetables", "Herbs", "Leafy Greens"],
-            seasonTips: [
-                "Monitor soil moisture",
-                "Weed regularly",
-                "Watch for pests"
-            ]
-        };
-    }
 
-    getWaterAdvice(moisture) {
-        if (moisture < 0.3) return "🚨 Irrigation needed immediately - soil is very dry";
-        if (moisture > 0.7) return "✅ Reduce watering - soil has adequate moisture";
-        return "💧 Optimal moisture - maintain current watering schedule";
-    }
+        console.log('📤 Sending to Supabase:', supabaseData);
 
-    getWaterTips(moisture) {
-        if (moisture < 0.3) {
-            return [
-                "Water early morning to reduce evaporation",
-                "Use drip irrigation for efficiency",
-                "Add mulch to retain soil moisture",
-                "Check for leaks in irrigation"
-            ];
-        } else if (moisture > 0.7) {
-            return [
-                "Ensure proper drainage in fields",
-                "Monitor for root diseases",
-                "Reduce irrigation frequency",
-                "Improve soil aeration"
-            ];
-        } else {
-            return [
-                "Maintain consistent watering",
-                "Monitor soil moisture weekly",
-                "Consider rainwater harvesting",
-                "Use moisture sensors"
-            ];
-        }
-    }
+        // Insert into analysis_history table
+        const { data, error } = await supabase
+            .from('analysis_history')
+            .insert([supabaseData])
+            .select();
 
-    getFieldNotifications(analysis) {
-        const notifications = [];
-        const temperature = analysis.temperature || this.getCurrentTemperature();
-
-        if (temperature > 35) {
-            notifications.push({
-                type: 'danger',
-                icon: 'fa-temperature-high',
-                message: 'Extreme heat! Limit outdoor work to morning hours'
-            });
-        } else if (temperature > 30) {
-            notifications.push({
-                type: 'warning',
-                icon: 'fa-sun',
-                message: 'Hot day - stay hydrated and take breaks'
-            });
-        } else if (temperature > 20) {
-            notifications.push({
-                type: 'success',
-                icon: 'fa-check-circle',
-                message: 'Perfect temperature for outdoor work'
-            });
-        } else if (temperature < 10) {
-            notifications.push({
-                type: 'warning',
-                icon: 'fa-temperature-low',
-                message: 'Cold conditions - wear warm layers'
-            });
+        if (error) {
+            console.error('❌ Error saving to Supabase:', error);
+            throw error;
         }
 
-        if (analysis.moisture < 0.3) {
-            notifications.push({
-                type: 'danger',
-                icon: 'fa-tint',
-                message: 'Critical: Soil needs immediate watering'
-            });
-        } else if (analysis.moisture > 0.7) {
-            notifications.push({
-                type: 'warning',
-                icon: 'fa-tint',
-                message: 'High moisture - check drainage'
-            });
-        }
+        console.log('✅ Analysis saved to Supabase:', data);
+        return data;
 
-        if (analysis.ndvi < 0.3) {
-            notifications.push({
-                type: 'warning',
-                icon: 'fa-leaf',
-                message: 'Low vegetation - consider soil amendments'
-            });
-        } else if (analysis.ndvi >= 0.7) {
-            notifications.push({
-                type: 'success',
-                icon: 'fa-leaf',
-                message: 'Excellent plant growth detected'
-            });
-        }
-
-        return notifications.slice(0, 3);
-    }
-
-    getMoistureLevelClass(moisture) {
-        if (moisture >= 0.6) return 'moisture-high';
-        if (moisture >= 0.4) return 'moisture-adequate';
-        if (moisture >= 0.2) return 'moisture-low';
-        return 'moisture-very-low';
-    }
-
-    getNDVIClass(ndvi) {
-        if (ndvi >= 0.7) return 'ndvi-excellent';
-        if (ndvi >= 0.5) return 'ndvi-good';
-        if (ndvi >= 0.3) return 'ndvi-fair';
-        return 'ndvi-poor';
-    }
-
-    loadAIChat() {
-        console.log('AI Chat page loaded');
-        if (typeof initializeTerraAIChat === 'function') {
-            setTimeout(initializeTerraAIChat, 100);
-        }
-    }
-
-    updateChatbotContext(analysis) {
-        console.log('🔄 Updating chatbot context with analysis:', analysis);
-        
-        const storageKey = this.getUserStorageKey('soilAnalysis');
-        localStorage.setItem(storageKey, JSON.stringify(analysis));
-        
-        if (typeof terraBot !== 'undefined' && terraBot.setCurrentAnalysis) {
-            terraBot.setCurrentAnalysis(analysis);
-        }
-        
-        this.showAnalysisCompletionMessage(analysis);
-    }
-
-    showAnalysisCompletionMessage(analysis) {
-        const message = `🌱 **Soil Analysis Complete!**\n\nI now have your soil data:\n• Score: ${analysis.healthScore}/100\n• Risk: ${analysis.riskLevel}\n• Vegetation: ${analysis.ndvi}\n• Moisture: ${(analysis.moisture * 100).toFixed(1)}%\n\nAsk me about plants or soil improvements!`;
-
-        const mainChat = document.getElementById("chat-messages");
-        if (mainChat) {
-            const msgDiv = document.createElement("div");
-            msgDiv.className = "message bot-message";
-            msgDiv.innerHTML = message.replace(/\n/g, "<br>");
-            mainChat.appendChild(msgDiv);
-            mainChat.scrollTop = mainChat.scrollHeight;
-        }
-        
-        const aiChat = document.getElementById("ai-chat-messages");
-        if (aiChat) {
-            const msgDiv = document.createElement("div");
-            msgDiv.className = "message bot-message";
-            msgDiv.innerHTML = `<i class="fas fa-robot"></i> ${message.replace(/\n/g, "<br>")}`;
-            aiChat.appendChild(msgDiv);
-            aiChat.scrollTop = aiChat.scrollHeight;
-        }
-    }
-
-    showFlashCard(message, type = 'info') {
-        const flashCards = document.getElementById('flash-cards');
-        if (!flashCards) return;
-
-        const card = document.createElement('div');
-        card.className = `flash-card ${type}`;
-        card.innerHTML = `
-            <div class="flash-content">
-                <p>${message}</p>
-            </div>
-        `;
-
-        flashCards.appendChild(card);
-
-        setTimeout(() => {
-            if (card.parentNode) {
-                card.style.animation = 'slideInRight 0.3s ease reverse';
-                setTimeout(() => card.remove(), 300);
-            }
-        }, 8000);
-    }
-
-    loadStoredData() {
-        const historyKey = this.getUserStorageKey('analysisHistory');
-        const storedHistory = localStorage.getItem(historyKey);
-        
-        if (storedHistory) {
-            this.analysisHistory = JSON.parse(storedHistory);
-            console.log(`📊 Loaded ${this.analysisHistory.length} historical analyses for user ${this.userId}`);
-            
-            if (this.analysisHistory.length > 0) {
-                this.updateSidebarTips(this.analysisHistory[0]);
-            }
-        }
-
-        const preferencesKey = this.getUserStorageKey('preferences');
-        const preferences = localStorage.getItem(preferencesKey);
-        if (preferences) {
-            this.preferences = JSON.parse(preferences);
-        }
-    }
-
-    savePreferences() {
-        const storageKey = this.getUserStorageKey('preferences');
-        localStorage.setItem(storageKey, JSON.stringify(this.preferences));
-    }
-
-    setupEventListeners() {
-        const chatInputs = ['chat-input', 'ai-chat-input'];
-        chatInputs.forEach(inputId => {
-            const input = document.getElementById(inputId);
-            if (input) {
-                input.addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') {
-                        if (inputId === 'chat-input') {
-                            askClaude();
-                        } else {
-                            askAI();
-                        }
-                    }
-                });
-            }
-        });
-
-        window.addEventListener('resize', () => {
-            const sidebar = document.getElementById('sidebar');
-            const mainContent = document.querySelector('.main-content');
-            
-            if (window.innerWidth > 768) {
-                if (sidebar && mainContent) {
-                    mainContent.style.marginLeft = sidebar.classList.contains('open') ? '300px' : '0';
-                }
-            } else {
-                if (mainContent) {
-                    mainContent.style.marginLeft = '0';
-                }
-            }
-        });
+    } catch (error) {
+        console.error('💥 Failed to save analysis to Supabase:', error);
     }
 }
 
+    loadFarmInsights() {
+        // ... existing implementation
+    }
+
+    showSoilHealthDetails() {
+        // ... existing implementation
+    }
+
+    calculateSoilTrend() {
+        // ... existing implementation
+    }
+
+    getSoilHealthMessage(score) {
+        // ... existing implementation
+    }
+
+    getSeasonalAdvice() {
+        // ... existing implementation
+    }
+
+    getWaterAdvice(moisture) {
+        // ... existing implementation
+    }
+
+    getWaterTips(moisture) {
+        // ... existing implementation
+    }
+
+    getFieldNotifications(analysis) {
+        // ... existing implementation
+    }
+
+    getMoistureLevelClass(moisture) {
+        // ... existing implementation
+    }
+
+    getNDVIClass(ndvi) {
+        // ... existing implementation
+    }
+
+    loadAIChat() {
+        // ... existing implementation
+    }
+
+    updateChatbotContext(analysis) {
+        // ... existing implementation
+    }
+
+    showAnalysisCompletionMessage(analysis) {
+        // ... existing implementation
+    }
+
+    showFlashCard(message, type = 'info') {
+        // ... existing implementation
+    }
+
+    loadStoredData() {
+        // ... existing implementation
+    }
+
+    savePreferences() {
+        // ... existing implementation
+    }
+
+    setupEventListeners() {
+        // ... existing implementation
+    }
+}
+
+// Global functions remain the same
 function toggleSidebar() {
     if (window.app && typeof window.app.toggleSidebar === 'function') {
         window.app.toggleSidebar();

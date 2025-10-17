@@ -468,44 +468,78 @@ async function analyzeLocation(lat, lng) {
         
         // Display results
         displayResults(healthScore, riskLevel, satelliteData, recommendations);
+    
+
+console.log('💾 Preparing to save analysis to history...');
+
+const analysisData = {
+    lat: lat,
+    lng: lng,
+    locationName: window.currentAnalysisLocation || "Selected Location",
+    healthScore: healthScore,
+    riskLevel: riskLevel,
+    ndvi: satelliteData.ndvi,
+    moisture: satelliteData.moisture,
+    climateZone: satelliteData.climateZone,
+    temperature: satelliteData.temperature,
+    precipitation: satelliteData.precipitation,
+    recommendations: recommendations
+};
+
+console.log('📊 Analysis data ready:', analysisData);
+
+// Try multiple ways to save the analysis
+let saved = false;
+
+// Method 1: Use app.addToHistory if available
+if (window.app && typeof window.app.addToHistory === 'function') {
+    console.log('🔄 Saving via app.addToHistory...');
+    try {
+        await window.app.addToHistory(analysisData);
+        saved = true;
+        console.log('✅ Successfully saved via app.addToHistory');
+    } catch (error) {
+        console.error('❌ Failed to save via app:', error);
+    }
+}
+
+// Method 2: Fallback - save directly to localStorage
+if (!saved) {
+    console.log('🔄 Falling back to direct localStorage save...');
+    try {
+        const userId = localStorage.getItem('terraScan_userId') || 'unknown_user';
+        const storageKey = `terraScan_${userId}_analysisHistory`;
+        const existingHistory = JSON.parse(localStorage.getItem(storageKey) || '[]');
         
-        // Save to history - SIMPLIFIED AND RELIABLE
-        const analysisData = {
-            lat: lat,
-            lng: lng,
-            locationName: window.currentAnalysisLocation || "Selected Location",
-            healthScore: healthScore,
-            riskLevel: riskLevel,
-            ndvi: satelliteData.ndvi,
-            moisture: satelliteData.moisture,
-            climateZone: satelliteData.climateZone,
-            temperature: satelliteData.temperature,
-            precipitation: satelliteData.precipitation,
-            recommendations: recommendations
-        };
-        
-        console.log('💾 Saving analysis to history:', analysisData);
-        
-        // ALWAYS save directly to localStorage - most reliable method
-        const existingHistory = JSON.parse(localStorage.getItem('terraScan_analysisHistory') || '[]');
         const newHistoryItem = {
-            id: Date.now(),
+            id: Date.now().toString(), // Use string ID
             timestamp: new Date().toISOString(),
             ...analysisData
         };
+        
         existingHistory.unshift(newHistoryItem);
         
         // Keep only last 50 analyses
         const trimmedHistory = existingHistory.slice(0, 50);
-        localStorage.setItem('terraScan_analysisHistory', JSON.stringify(trimmedHistory));
+        localStorage.setItem(storageKey, JSON.stringify(trimmedHistory));
         
-        console.log('✅ Analysis saved to history. Total analyses:', trimmedHistory.length);
+        saved = true;
+        console.log('✅ Successfully saved to localStorage directly');
+        console.log('📁 New history length:', trimmedHistory.length);
         
-        // Also try to update app if available (for real-time UI updates)
-        if (window.app && typeof window.app.addToHistory === 'function') {
-            window.app.addToHistory(analysisData);
+        // Force reload the history in the app
+        if (window.app && window.app.loadAnalysisHistory) {
+            setTimeout(() => window.app.loadAnalysisHistory(), 500);
         }
-        
+    } catch (error) {
+        console.error('❌ Failed to save to localStorage:', error);
+    }
+}
+
+if (!saved) {
+    console.error('💥 All saving methods failed!');
+    this.showFlashCard('❌ Failed to save analysis to history', 'error');
+}
         // Update chatbot with analysis data
         console.log("🔄 Sending analysis to chatbot:", analysisData);
         
@@ -640,7 +674,6 @@ function getMoistureStatus(moisture) {
     if (moisture >= 0.2) return 'Low';
     return 'Very Low';
 }
-
 // Export functions for global access
 window.getSatelliteData = getSatelliteData;
 window.calculateSoilHealth = calculateSoilHealth;
