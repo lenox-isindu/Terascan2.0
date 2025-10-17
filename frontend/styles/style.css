@@ -1903,3 +1903,134 @@ body {
   color: #667eea;
   font-weight: 500;
 }
+/* Smart Insights CSS */
+.problem-areas, .best-areas {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.problem-area, .best-area {
+    background: var(--card-bg);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    border-left: 4px solid var(--warning);
+}
+
+.best-area {
+    border-left-color: var(--success);
+}
+
+.area-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.priority-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: bold;
+}
+
+.priority-critical { background: #ef4444; color: white; }
+.priority-high { background: #f59e0b; color: white; }
+.priority-medium { background: #eab308; color: black; }
+
+.issue-list, .strength-list {
+    margin: 0.5rem 0;
+    padding-left: 1.25rem;
+}
+
+.issue-list li { color: #ef4444; }
+.strength-list li { color: #10b981; }
+
+.action-plan {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.action-item {
+    display: flex;
+    align-items: flex-start;
+    background: var(--card-bg);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    border-left: 4px solid #eab308;
+}
+
+.action-item.priority-high {
+    border-left-color: #ef4444;
+}
+
+.action-icon {
+    font-size: 1.5rem;
+    margin-right: 1rem;
+}
+
+.action-content {
+    flex: 1;
+}
+
+.action-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.priority-tag {
+    padding: 0.2rem 0.5rem;
+    background: #eab308;
+    color: black;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: bold;
+}
+
+.action-item.priority-high .priority-tag {
+    background: #ef4444;
+    color: white;
+}
+
+.water-stats {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.water-distribution {
+    display: flex;
+    gap: 1rem;
+}
+
+.dist-item {
+    text-align: center;
+    padding: 0.5rem;
+    border-radius: 8px;
+}
+
+.dist-item.dry { background: #fef2f2; }
+.dist-item.optimal { background: #f0fdf4; }
+.dist-item.wet { background: #f0f9ff; }
+
+.dist-count {
+    display: block;
+    font-size: 1.25rem;
+    font-weight: bold;
+}
+
+.dist-label {
+    font-size: 0.75rem;
+    color: var(--gray);
+}
+
+.success-message {
+    color: #10b981;
+    text-align: center;
+    padding: 1rem;
+}
